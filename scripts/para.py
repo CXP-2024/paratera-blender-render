@@ -6,6 +6,8 @@
   para.py create --zone Z --model M --yes     create (BILLS MONEY; --yes required)
   para.py ssh --zone Z --uuid U      fetch SSH login, cache it locally (password not printed)
   para.py stop --zone Z --uuid U     stop + stop charging, wait until Stopped
+  para.py stop --save-env ...        keep the system disk (REQUIRED before making an image)
+  para.py image --zone Z --uuid U --name N   create a custom image from a STOPPED (save-env) instance
 """
 import argparse
 import os
@@ -88,10 +90,31 @@ def cmd_ssh(a):
     print("ssh url:", s["url"], "\npassword cached (not printed) in", p)
 
 
+def cmd_image(a):
+    from ackci.ACKCIClientMain import ACKCIClient
+    from ack_jobs.ACKJobClientMain import ACKJobClient
+
+    hp, cp = profiles()
+    r = call(ACKCIClient(hp, cp), "CreateImages", {"zoneCode": a.zone, "aliasName": a.name,
+                                                   "serviceUuid": a.uuid, "imageDesc": a.desc}, retries=1)
+    print(r["message"] if r["code"] != 200 else "started")
+    if r["code"] != 200:
+        sys.exit("Instance must be Stopped (stop --save-env first). API says: %r" % r["message"])
+    job = r["data"][0]["jobUuid"]
+    print("image uuid:", r["data"][0]["resourceUuid"])
+    jc = ACKJobClient(hp, cp)
+    for _ in range(90):
+        j = call(jc, "DescribeJobs", {"zoneCode": a.zone, "jobUuid": job})["data"][0]
+        print(" done=%s success=%s" % (j["done"], j["success"]), flush=True)
+        if j["done"]:
+            return
+        time.sleep(20)
+
+
 def cmd_stop(a):
     _, cs = clients()
     print("stop code:", call(cs, "StopServices", {"zoneCode": a.zone, "serviceUuids": [a.uuid],
-                                                  "saveEnv": False, "stoppedMode": 1})["code"])
+                                                  "saveEnv": a.save_env, "stoppedMode": 1})["code"])
     for _ in range(60):
         st = {x["serviceUuid"]: x["serviceStatus"] for x in call(cs, "DescribeServices", {"zoneCode": a.zone})["data"]["rows"]}
         print(" ", st.get(a.uuid), flush=True)
@@ -110,6 +133,9 @@ p.add_argument("--zone", required=True); p.add_argument("--model", required=True
 p.add_argument("--name", default="blender-render"); p.add_argument("--image"); p.add_argument("--yes", action="store_true")
 p.set_defaults(f=cmd_create)
 p = sub.add_parser("ssh"); p.add_argument("--zone", required=True); p.add_argument("--uuid", required=True); p.set_defaults(f=cmd_ssh)
-p = sub.add_parser("stop"); p.add_argument("--zone", required=True); p.add_argument("--uuid", required=True); p.set_defaults(f=cmd_stop)
+p = sub.add_parser("stop"); p.add_argument("--zone", required=True); p.add_argument("--uuid", required=True)
+p.add_argument("--save-env", action="store_true"); p.set_defaults(f=cmd_stop)
+p = sub.add_parser("image"); p.add_argument("--zone", required=True); p.add_argument("--uuid", required=True)
+p.add_argument("--name", required=True); p.add_argument("--desc", default="custom image"); p.set_defaults(f=cmd_image)
 a = ap.parse_args()
 a.f(a)

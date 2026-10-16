@@ -43,6 +43,29 @@ python scripts/para.py stop --zone cn-zhongwei-ac --uuid UUID           # always
 SSH login is `root@<uuid>` on `ssh.zw1.paratera.com:2222` with a password from `DescribeServicesSSH`.
 Server-side `scp`/`rsync` through that gateway also works; `remote.py put/get` uses SFTP.
 
+## Prebuilt image (fastest start)
+Image **`ackci-00gjhvds`** ("blender-mmd-3090", zone `cn-zhongwei-ac`, GPU type rtx3090 only) already contains
+Blender 4.2.23 at `/root/blender`, the NVIDIA GL/EGL/OptiX libs (GPU EEVEE works), Node 20 + yarn, and
+VMDPhysicsBake at `/root/tools/VMDPhysicsBake`. Boot from it and skip all setup (verified: `yarn bake` OK,
+EEVEE 30 frames in 17 s):
+```bash
+python scripts/para.py create --zone cn-zhongwei-ac --model rtx3090.epyc7402.xlarge --image ackci-00gjhvds --yes
+```
+Images are per zone and per GPU type; a 4090/5090 needs its own image built the same way. If the image is gone
+(or for another GPU), build one: create from the stock image -> `setup_instance.sh` -> `setup_tools.sh` ->
+`para.py stop --save-env` -> wait until `Stopped` -> `para.py image --name ...` (takes ~1 min; it is billed
+CNY 0.00048/GB/h). **The API only accepts images from a Stopped instance** (the docs wrongly say Running), and
+stopping with `saveEnv=false` wipes the disk, so you must stop with `--save-env` first.
+Shared storage is mounted at `/root/shared-nvme` (JuiceFS, 50 GB free, survives stop/delete); `/shared-public` is
+a read-only public mount. Put `.blend`/PMX/VMD assets there to avoid re-uploading.
+
+## MMD pipeline: VMDPhysicsBake (github.com/yyc-git/VMDPhysicsBake, MIT)
+Headless Node tool: PMX + action VMD -> VMD with baked per-frame physics bones (Ammo.js), deterministic,
+no GPU/browser needed. On the instance: `cd /root/tools/VMDPhysicsBake`, then
+`node src/tool/bake-physics.mjs --pmx <model.pmx> --vmd <motion.vmd> --output output/x_bake.vmd`
+(`yarn bake` = bundled demo, ~6 s; `yarn verify` = assertions V1-V6, all PASS on the image). Config knobs are in
+`src/tool/bake-config*.json`. Then import the baked VMD into Blender with mmd_tools (not installed yet) and render.
+
 ## Prices measured 2026-10 (pay-as-you-go, per hour, 1 GPU, 10-14 CPU cores)
 RTX 3090 1.30 (zone cn-zhongwei-ac) - RTX 4090 1.88 (cn-zhongwei-bc, ap-shandong-cd; cn-zhongwei-cc has 14 cores/120 GB) -
 RTX 5090 2.98. 2-GPU 3090 is 2.60. Billing is per second, settled hourly (docs); no minimum stated.
@@ -72,6 +95,17 @@ Re-check with `para.py types`.
     kills it. Use `pkill -x blender`, and start long jobs via a script file with `nohup ... &`, then poll the log.
 11. The terminal on Windows may mangle Chinese API messages; set `PYTHONIOENCODING=utf-8`.
 
+12. **Uploads through the SSH gateway are slow (~13 KB/s)** and a >50 MB upload stalls past tool timeouts. Keep
+    uploads small (slim tarballs), use shared storage, or have the instance download from a fast source.
+    `github.com` from the instance is slow/times out intermittently; `download.blender.org`, `nodejs.org`,
+    `download.nvidia.com` were fine.
+13. **Git Bash on Windows rewrites `/root/...` arguments into `C:/Program Files/Git/root/...`.** Export
+    `MSYS_NO_PATHCONV=1` before calling `remote.py put/get/run` with absolute remote paths.
+14. `remote.py run` with a long job: start it with `nohup ... &` from a script file and poll the log; a foreground
+    call that exceeds the tool timeout is killed/backgrounded and leaves half-done state.
+15. After `stop` the API can show `Stopping` for 10+ minutes; use `Stopped` as the only "done" signal and check
+    billing in the console if it hangs.
+
 ## Cost model (measured, synthetic 1080p scene, 3090)
 EEVEE 64 spp: 0.55 s/frame -> ~CNY 0.0002/frame. Cycles CUDA 128 spp: 16.9 s/frame -> ~CNY 0.006/frame.
 4090 costs 1.45x a 3090 per hour, so it only pays off if it renders >1.45x faster. Cycles: estimated ~2x
@@ -79,7 +113,7 @@ EEVEE 64 spp: 0.55 s/frame -> ~CNY 0.0002/frame. Cycles CUDA 128 spp: 16.9 s/fra
 startup / CPU / disk, so 3090 is cheaper. Real MMD scenes are more CPU-bound than the benchmark; time ~10 real
 frames on each GPU before committing to a long render. Use `scripts/bench_scene.py` for a quick GPU check.
 
-## MMD notes (not yet tested)
-Import needs the `mmd_tools` add-on installed into the remote Blender (extensions are per-install and lost on
-`saveEnv=false` stop). Pre-bake physics locally; upload the `.blend` plus textures with relative paths
-(`File > External Data > Pack` or keep the same folder structure).
+## MMD notes (partly tested)
+VMDPhysicsBake is tested (see above). Importing PMX/VMD into Blender needs the `mmd_tools` add-on, which is **not
+installed in the image yet** and was not tested; install it into `/root/blender` and rebuild the image. Upload
+the `.blend`/PMX plus textures with relative paths (or `File > External Data > Pack`).

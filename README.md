@@ -8,6 +8,7 @@ with working GPU EEVEE/Cycles, render over SSH, and stop the instance.
 - `scripts/para.py` - list models/prices, create (dry-run by default), fetch SSH login, stop
 - `scripts/remote.py` - run commands and transfer files over SSH (paramiko)
 - `scripts/setup_instance.sh` - installs Blender and the NVIDIA GL/EGL/OptiX userspace libs on the instance
+- `scripts/setup_tools.sh` - Node 20 + yarn + VMDPhysicsBake on the instance
 - `scripts/patch_sdk.py` - fixes `_sha256` import in the vendor SDK on Python >= 3.12
 - `scripts/bench_scene.py` - synthetic scene for timing EEVEE / Cycles
 
