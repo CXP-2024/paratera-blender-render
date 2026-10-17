@@ -66,6 +66,11 @@ no GPU/browser needed. On the instance: `cd /root/tools/VMDPhysicsBake`, then
 (`yarn bake` = bundled demo, ~6 s; `yarn verify` = assertions V1-V6, all PASS on the image). Config knobs are in
 `src/tool/bake-config*.json`. Then import the baked VMD into Blender with mmd_tools (not installed yet) and render.
 
+The commands above describe the original image smoke test, not the later validated Genshin animation recipe.
+For an accepted character scene, follow `genshin-blender-render/references/headless-physics.md`: evaluated FK
+input, matching local `bake-fixed-timeline.mjs` and Helper implementation, physics-only JSON import, and body
+collider alignment checks. Do not silently replace that implementation with the upstream default entry.
+
 ## Prices measured 2026-10 (pay-as-you-go, per hour, 1 GPU, 10-14 CPU cores)
 RTX 3090 1.30 (zone cn-zhongwei-ac) - RTX 4090 1.88 (cn-zhongwei-bc, ap-shandong-cd; cn-zhongwei-cc has 14 cores/120 GB) -
 RTX 5090 2.98. 2-GPU 3090 is 2.60. Billing is per second, settled hourly (docs); no minimum stated.
@@ -121,3 +126,5 @@ the `.blend`/PMX plus textures with relative paths (or `File > External Data > P
 ## 原神 / MMD 材质工作流
 
 涉及原神三渲二场景时，先读 [原神材质提交前检查](references/genshin-material-preflight.md)，并使用 genshin-blender-render 建立多光向全身与脸部试片基线，再执行本文的调度和资源管理。
+
+认可成片的超分、插帧或大文件回收，另读 [无界面 GPU 后处理与传输](references/headless-postprocess.md)。Blender 的 NVIDIA EGL 正常不保证 ncnn 的 Vulkan 设备正确；显式核查实际 GPU，排除 llvmpipe。停止再启动同一实例后，重新确认 GPU UUID，不能沿用上一台宿主机的身份。
